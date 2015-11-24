@@ -5,7 +5,7 @@
 
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.1.2"
+#define PLUGIN_VERSION "0.1.3"
 public Plugin myinfo = {
     name = "[TF2] Map Voting Tweaks",
     author = "nosoop",
@@ -125,8 +125,8 @@ public Action Command_CallVote(int iClient, const char[] cmd, int nArg) {
 	char voteReason[16];
 	GetCmdArg(1, voteReason, sizeof(voteReason));
 	
-	// Don't handle non-NextLevel votes.
-	if (!StrEqual(voteReason, "NextLevel", false)) {
+	// Don't handle non-NextLevel / non-ChangeLevel votes.
+	if (!StrEqual(voteReason, "NextLevel", false) && !StrEqual(voteReason, "ChangeLevel", false)) {
 		return Plugin_Continue;
 	}
 	
@@ -144,12 +144,12 @@ public Action Command_CallVote(int iClient, const char[] cmd, int nArg) {
 		strcopy(mapFullName, sizeof(mapFullName), nominatedShortMap);
 	}
 	
-	// Not using callvote as nominate window.
-	if (!g_ConVarNextLevelAsNominate.BoolValue) {
+	// Not using callvote as a nomination map picker.
+	if (!g_ConVarNextLevelAsNominate.BoolValue || StrEqual(voteReason, "ChangeLevel", false)) {
 		// Call the actual mapvote with the resolved map name.
 		g_bPassNextCallVote[iClient] = true;
 		
-		FakeClientCommandEx(iClient, "callvote NextLevel %s", mapFullName);
+		FakeClientCommandEx(iClient, "callvote %s %s", voteReason, mapFullName);
 		return Plugin_Handled;
 	}
 	
