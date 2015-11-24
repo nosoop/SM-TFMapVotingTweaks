@@ -5,7 +5,7 @@
 
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.1.3"
+#define PLUGIN_VERSION "0.1.4"
 public Plugin myinfo = {
     name = "[TF2] Map Voting Tweaks",
     author = "nosoop",
@@ -30,7 +30,7 @@ ConVar g_ConVarNextLevelAsNominate, g_ConVarEnforceExclusions;
 // Allow next callvote from that client to go through
 int g_bPassNextCallVote[MAXPLAYERS+1];
 
-int g_iMapCycleStringTable;
+int g_iMapCycleStringTable, g_iMapCycleStringTableIndex;
 bool g_bFinalizedMapCycleTable;
 
 public void OnPluginStart() {
@@ -47,12 +47,6 @@ public void OnPluginStart() {
 	g_FullMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
 	g_MapNameReference = new StringMap();
 	
-	g_iMapCycleStringTable = FindStringTable(TABLE_SERVER_MAP_CYCLE);
-	
-	if (g_iMapCycleStringTable == INVALID_STRING_INDEX) {
-		SetFailState("Could not find %s stringtable", TABLE_SERVER_MAP_CYCLE);
-	}
-	
 	AutoExecConfig();
 }
 
@@ -63,6 +57,14 @@ public void OnMapEnd() {
 
 public void OnMapStart() {
 	g_bFinalizedMapCycleTable = false;
+	
+	if ((g_iMapCycleStringTable = FindStringTable(TABLE_SERVER_MAP_CYCLE)) == INVALID_STRING_TABLE) {
+		SetFailState("Could not find %s stringtable", TABLE_SERVER_MAP_CYCLE);
+	}
+	
+	if ((g_iMapCycleStringTableIndex = FindStringIndex(g_iMapCycleStringTable, TABLEENTRY_SERVER_MAP_CYCLE)) == INVALID_STRING_INDEX) {
+		SetFailState("Could not find %s string index in table %s.", TABLEENTRY_SERVER_MAP_CYCLE, TABLE_SERVER_MAP_CYCLE);
+	}
 	
 	/**
 	 * Process the mapcycle for late load.
@@ -206,34 +208,21 @@ void ProcessMapNomination(int iClient, const char[] nominatedMap) {
 }
 
 ArrayList ReadServerMapCycleFromStringTable() {
-	int index = FindStringIndex(g_iMapCycleStringTable, TABLEENTRY_SERVER_MAP_CYCLE);
+	int dataLength = GetStringTableDataLength(g_iMapCycleStringTable, g_iMapCycleStringTableIndex);
+	char[] mapData = new char[dataLength];
+	GetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, mapData, dataLength);
 	
-	if (index != INVALID_STRING_INDEX) {
-		int dataLength = GetStringTableDataLength(g_iMapCycleStringTable, index);
-		char[] mapData = new char[dataLength];
-		GetStringTableData(g_iMapCycleStringTable, index, mapData, dataLength);
-		
-		return ArrayListFromStringLines(mapData);
-	} else {
-		SetFailState("Could not find %s string index in table.", TABLEENTRY_SERVER_MAP_CYCLE);
-		return null;
-	}
+	return ArrayListFromStringLines(mapData);
 }
 
 void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
-	int index = FindStringIndex(g_iMapCycleStringTable, TABLEENTRY_SERVER_MAP_CYCLE);
+	int dataLength = mapCycle.Length * MAP_SANE_NAME_LENGTH;
+	char[] newMapData = new char[dataLength];
+	StringLinesFromArrayList(mapCycle, newMapData, dataLength);
 	
-	if (index != INVALID_STRING_INDEX) {
-		int dataLength = mapCycle.Length * MAP_SANE_NAME_LENGTH;
-		char[] newMapData = new char[dataLength];
-		StringLinesFromArrayList(mapCycle, newMapData, dataLength);
-		
-		bool bPreviousState = LockStringTables(false);
-		SetStringTableData(g_iMapCycleStringTable, index, newMapData, dataLength);
-		LockStringTables(bPreviousState);
-	} else {
-		SetFailState("Could not find %s string index in table.", TABLEENTRY_SERVER_MAP_CYCLE);
-	}
+	bool bPreviousState = LockStringTables(false);
+	SetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, newMapData, dataLength);
+	LockStringTables(bPreviousState);
 }
 
 /**
