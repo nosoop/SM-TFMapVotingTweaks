@@ -5,7 +5,7 @@
 
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.1.0"
+#define PLUGIN_VERSION "0.1.1"
 public Plugin myinfo = {
     name = "[TF2] Map Voting Tweaks",
     author = "nosoop",
@@ -38,7 +38,7 @@ public void OnPluginStart() {
 	CreateConVar("sm_tfmapvote_version", PLUGIN_VERSION, "Current version of Map Voting Tweaks.", FCVAR_PLUGIN | FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	
 	g_ConVarNextLevelAsNominate = CreateConVar("sm_tfmapvote_nominate", "1", "Specifies if the map vote menu is treated as a SourceMod nomination menu.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1", "Specifies if recent maps should be removed from the vote menu.  (Modifies ServerMapCycle stringtable.)", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1", "Specifies if recent maps should be removed from the vote menu.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	
 	AddCommandListener(Command_CallVote, "callvote");
 	
@@ -46,6 +46,8 @@ public void OnPluginStart() {
 	g_MapNameReference = new StringMap();
 	
 	g_iMapCycleStringTable = FindStringTable("ServerMapCycle");
+	
+	AutoExecConfig();
 }
 
 public void OnMapEnd() {
