@@ -64,10 +64,17 @@ public void OnMapEnd() {
 public void OnMapStart() {
 	g_bFinalizedMapCycleTable = false;
 	
-	// Process the mapcycle for late load.  Note: See OnClientPostAdminCheck()
+	/**
+	 * Process the mapcycle for late load.
+	 * Doesn't fully resolve workshop maps otherwise.  See OnClientPostAdminCheck().
+	 */
 	ProcessServerMapCycleStringTable();
 }
 
+/**
+ * Repopulates the map cycle table with all the maps it has acquired during the current map
+ * (except shorthand workshop entries).
+ */
 public void OnPluginEnd() {
 	if (g_FullMapList.Length > 0) {
 		char mapName[MAP_SANE_NAME_LENGTH];
@@ -93,16 +100,16 @@ public void OnPluginEnd() {
 		}
 		
 		WriteServerMapCycleToStringTable(exportMapList);
+		
+		delete exportMapList;
 	}
 }
 
 public void OnClientPostAdminCheck(int iClient) {
 	/**
-	 * TODO proper string table handling?
-	 * 
-	 * Processing the table during OnMapStart leaves short map workshop names that don't
-	 * resolve to display names, so we're currently just going to process it when the first
-	 * actual player is in-game, too.  It *should* be ready by then, riiiiight?
+	 * Processing the table during an actual OnMapStart leaves short map workshop names that
+	 * don't resolve to display names, so we're currently just going to process it when the
+	 * first actual player is in-game, too.  It *should* be ready by then, riiiiight?
 	 */
 	if (!IsFakeClient(iClient)) {
 		ProcessServerMapCycleStringTable();
@@ -230,10 +237,9 @@ void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
 }
 
 /**
- * Removes maps from the ServerMapCycle stringtable.
+ * Modifies the ServerMapCycle stringtable.
  */
 void ProcessServerMapCycleStringTable() {
-	// We already have all of the full Workshop names resolved to display names.
 	if (g_bFinalizedMapCycleTable) {
 		return;
 	}
@@ -243,11 +249,13 @@ void ProcessServerMapCycleStringTable() {
 	ArrayList excludeMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
 	GetExcludeMapList(excludeMapList);
 	
+	/**
+	 * Map cycle isn't finalized, and if this is not the first run through some maps might have
+	 * been removed.
+	 */
 	CopyUniqueStringArrayList(maps, g_FullMapList);
 	
 	ArrayList newMaps = new ArrayList(MAP_SANE_NAME_LENGTH);
-	
-	// Push all maps to include into newMaps array.
 	for (int m = 0; m < g_FullMapList.Length; m++) {
 		char mapBuffer[MAP_SANE_NAME_LENGTH], shortMapBuffer[MAP_SANE_NAME_LENGTH];
 		g_FullMapList.GetString(m, mapBuffer, sizeof(mapBuffer));
@@ -261,11 +269,8 @@ void ProcessServerMapCycleStringTable() {
 			if (!IsWorkshopShortName(mapBuffer)) {
 				newMaps.PushString(mapBuffer);
 			}
-			// TODO if short name and there isn't a long name copy of that workshop map, then:
-			// g_bFinalizedMapCycleTable = true
 		}
 	}
-	
 	WriteServerMapCycleToStringTable(newMaps);
 	
 	delete newMaps;
