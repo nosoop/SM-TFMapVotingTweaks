@@ -3,9 +3,11 @@
 #include <sdktools>
 #include <mapchooser>
 
+#include <nativevotes>
+
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.1.4"
+#define PLUGIN_VERSION "0.2.0"
 public Plugin myinfo = {
     name = "[TF2] Map Voting Tweaks",
     author = "nosoop",
@@ -27,9 +29,6 @@ ArrayList g_FullMapList;
 
 ConVar g_ConVarNextLevelAsNominate, g_ConVarEnforceExclusions;
 
-// Allow next callvote from that client to go through
-int g_bPassNextCallVote[MAXPLAYERS+1];
-
 int g_iMapCycleStringTable, g_iMapCycleStringTableIndex;
 bool g_bFinalizedMapCycleTable;
 
@@ -37,15 +36,18 @@ public void OnPluginStart() {
 	LoadTranslations("common.phrases");
 	LoadTranslations("nominations.phrases");
 	
-	CreateConVar("sm_tfmapvote_version", PLUGIN_VERSION, "Current version of Map Voting Tweaks.", FCVAR_PLUGIN | FCVAR_NOTIFY | FCVAR_DONTRECORD);
+	CreateConVar("sm_tfmapvote_version", PLUGIN_VERSION, "Current version of Map Voting Tweaks.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	
-	g_ConVarNextLevelAsNominate = CreateConVar("sm_tfmapvote_nominate", "1", "Specifies if the map vote menu is treated as a SourceMod nomination menu.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1", "Specifies if recent maps should be removed from the vote menu.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	g_ConVarNextLevelAsNominate = CreateConVar("sm_tfmapvote_nominate", "1", "Specifies if the map vote menu is treated as a SourceMod nomination menu.", _, true, 0.0, true, 1.0);
 	
-	AddCommandListener(Command_CallVote, "callvote");
+	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1", "Specifies if recent maps should be removed from the vote menu.", _, true, 0.0, true, 1.0);
 	
 	g_FullMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
 	g_MapNameReference = new StringMap();
+	
+	// TODO move this to a library check
+	NativeVotes_RegisterVoteCommand(NativeVotesOverride_NextLevel, OnNextLevelVoteCall);
+	NativeVotes_RegisterVoteCommand(NativeVotesOverride_ChgLevel, OnAdminChangeLevelVoteCall, VisCheck_AdminChangeLevelVote);
 	
 	AutoExecConfig();
 }
@@ -119,49 +121,50 @@ public void OnClientPostAdminCheck(int iClient) {
 	}
 }
 
-public Action Command_CallVote(int iClient, const char[] cmd, int nArg) {
-	if (nArg < 2) {
-		return Plugin_Continue;
-	}
-	
-	char voteReason[16];
-	GetCmdArg(1, voteReason, sizeof(voteReason));
-	
-	// Don't handle non-NextLevel / non-ChangeLevel votes.
-	if (!StrEqual(voteReason, "NextLevel", false) && !StrEqual(voteReason, "ChangeLevel", false)) {
-		return Plugin_Continue;
-	}
-	
-	if (g_bPassNextCallVote[iClient]) {
-		g_bPassNextCallVote[iClient] = false;
-		return Plugin_Continue;
-	}
-	
-	char nominatedShortMap[PLATFORM_MAX_PATH];
-	GetCmdArg(2, nominatedShortMap, sizeof(nominatedShortMap));
-	
-	char mapFullName[PLATFORM_MAX_PATH];
-	if (!g_MapNameReference.GetString(nominatedShortMap, mapFullName, sizeof(mapFullName))) {
-		// The potential shorthand name is actually the full name.
-		strcopy(mapFullName, sizeof(mapFullName), nominatedShortMap);
-	}
-	
-	// Not using callvote as a nomination map picker.
-	if (!g_ConVarNextLevelAsNominate.BoolValue || StrEqual(voteReason, "ChangeLevel", false)) {
-		// Call the actual mapvote with the resolved map name.
-		g_bPassNextCallVote[iClient] = true;
-		
-		FakeClientCommandEx(iClient, "callvote %s %s", voteReason, mapFullName);
+/**
+ * Overrides the next level vote call with a nomination.
+ */
+public Action OnNextLevelVoteCall(int client, NativeVotesOverride overrideType, const char[] voteArgument) {
+	char map[MAP_SANE_NAME_LENGTH];
+	ResolveMapDisplayName(voteArgument, map, sizeof(map));
+	if (true || g_ConVarNextLevelAsNominate.BoolValue) {
+		ProcessMapNomination(client, map);
 		return Plugin_Handled;
+	} else {
+		// TODO perform standard Valve NextLevel vote
 	}
+	return Plugin_Continue;
+}
+
+/**
+ * Sets visibility of admin's "changelevel" voting menu.
+ */
+public Action VisCheck_AdminChangeLevelVote(int client, NativeVotesOverride overrideType) {
+	if (CheckCommandAccess(client, "sm_map", ADMFLAG_CHANGEMAP)) {
+		return Plugin_Continue;
+	}
+	return Plugin_Stop;
+}
+
+/**
+ * Admin "changelevel" allows admin to immediately change to the next level
+ */
+public Action OnAdminChangeLevelVoteCall(int client, NativeVotesOverride overrideType, const char[] voteArgument) {
+	char map[MAP_SANE_NAME_LENGTH];
+	ResolveMapDisplayName(voteArgument, map, sizeof(map));
 	
-	ProcessMapNomination(iClient, mapFullName);
+	if (CommandExists("sm_map")) {
+		FakeClientCommand(client, "sm_map %s", map);
+	} else {
+		ForceChangeLevel(map, "Admin changelevel vote");
+	}
 	
 	return Plugin_Handled;
 }
 
+
 /**
- * Performs a map nomination, given a client and a full map name.
+ * Performs a map nomination, given a vote-calling client and a full map name.
  */
 void ProcessMapNomination(int iClient, const char[] nominatedMap) {
 	ArrayList excludeMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
@@ -174,19 +177,14 @@ void ProcessMapNomination(int iClient, const char[] nominatedMap) {
 		PrintToChat(iClient, "%t", "Map in Exclude List");
 		return;
 	}
-
-	// If a workshop map, use the shorthand ID-based version of the map name on nominate.
-	// TODO this may change once a proper way to resolve map names is available
-	char nominatedMapShorthand[PLATFORM_MAX_PATH];
-	GetWorkshopShortName(nominatedMap, nominatedMapShorthand, sizeof(nominatedMapShorthand));
 	
-	NominateResult result = NominateMap(nominatedMapShorthand, false, iClient);
+	NominateResult result = NominateMap(nominatedMap, false, iClient);
 	
 	char name[64];
 	GetClientName(iClient, name, sizeof(name));
 	
-	char nominatedMapDisplay[PLATFORM_MAX_PATH];
-	Compat_GetMapDisplayName(nominatedMap, nominatedMapDisplay, sizeof(nominatedMapDisplay));
+	char nominatedMapDisplay[MAP_SANE_NAME_LENGTH];
+	GetMapDisplayName(nominatedMap, nominatedMapDisplay, sizeof(nominatedMapDisplay));
 	
 	switch (result) {
 		case Nominate_VoteFull: {
@@ -216,6 +214,7 @@ ArrayList ReadServerMapCycleFromStringTable() {
 }
 
 void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
+	PrintToServer("Writing %d maps to stringtable", mapCycle.Length);
 	int dataLength = mapCycle.Length * MAP_SANE_NAME_LENGTH;
 	char[] newMapData = new char[dataLength];
 	StringLinesFromArrayList(mapCycle, newMapData, dataLength);
@@ -226,7 +225,7 @@ void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
 }
 
 /**
- * Modifies the ServerMapCycle stringtable.
+ * Modifies the ServerMapCycle stringtable to provide shorthand map names.
  */
 void ProcessServerMapCycleStringTable() {
 	if (g_bFinalizedMapCycleTable) {
@@ -249,15 +248,21 @@ void ProcessServerMapCycleStringTable() {
 		char mapBuffer[MAP_SANE_NAME_LENGTH], shortMapBuffer[MAP_SANE_NAME_LENGTH];
 		g_FullMapList.GetString(m, mapBuffer, sizeof(mapBuffer));
 		
-		if (Compat_GetMapDisplayName(mapBuffer, shortMapBuffer, sizeof(shortMapBuffer))) {
-			// Workshop map that we haven't added yet?  Add the display name.
-			if (g_MapNameReference.SetString(shortMapBuffer, mapBuffer, false)) {
+		GetMapDisplayName(mapBuffer, shortMapBuffer, sizeof(shortMapBuffer));
+		
+		// Map is excluded
+		if (excludeMapList.FindString(mapBuffer) > -1 && g_ConVarEnforceExclusions.BoolValue) {
+			continue;
+		}
+		
+		if (!StrEqual(shortMapBuffer, mapBuffer, false) && g_MapNameReference.SetString(shortMapBuffer, mapBuffer, true)) {
+			// Is resolved workshop map name
+			if (newMaps.FindString(shortMapBuffer) == -1) {
 				newMaps.PushString(shortMapBuffer);
 			}
-		} else if (!g_ConVarEnforceExclusions.BoolValue || excludeMapList.FindString(mapBuffer) == -1) {
-			if (!IsWorkshopShortName(mapBuffer)) {
-				newMaps.PushString(mapBuffer);
-			}
+		} else if (newMaps.FindString(mapBuffer) == -1) {
+			// Is normal map name
+			newMaps.PushString(mapBuffer);
 		}
 	}
 	WriteServerMapCycleToStringTable(newMaps);
@@ -310,43 +315,13 @@ void CopyUniqueStringArrayList(ArrayList src, ArrayList dest) {
 	}
 }
 
-/**
- * Attempts to resolve a TF2 long map workshop name into a display map name.
- * Populates the buffer with mapName if not a workshop map.
- */
-bool Compat_GetMapDisplayName(const char[] mapName, char[] buffer, int length) {
-	// TODO is there any way to check for the existence of GetMapDisplayName?
-	strcopy(buffer, length, mapName);
-	if (IsWorkshopLongName(mapName)) {
-		// Trim off workshop directory, strip off the map ID onwards
-		strcopy(buffer, length, buffer[9]);
-		strcopy(buffer, StrContains(buffer, ".ugc") + 1, buffer);
-		return true;
-	}
-	return false;
-}
-
-/**
- * Attempts to resolve a TF2 long map workshop name into a "workshop/$ID" map name.
- * Populates the buffer with mapName if not a workshop map.
- */
-bool GetWorkshopShortName(const char[] mapName, char[] buffer, int length) {
-	// TODO remove when proper workshop support is implemented
-	strcopy(buffer, length, mapName);
-	if (IsWorkshopLongName(mapName)) {
-		// Extract workshop id, format buffer appropriately
-		char id[12];
-		strcopy(id, sizeof(id), buffer[StrContains(buffer, ".ugc") + 4]);
-		Format(buffer, length, "workshop/%s", id);
-		return true;
-	}
-	return false;
-}
-
 bool IsWorkshopShortName(const char[] mapName) {
 	return StrContains(mapName, "workshop/", true) == 0 && StrContains(mapName, ".ugc") == -1;
 }
 
-bool IsWorkshopLongName(const char[] mapName) {
-	return StrContains(mapName, "workshop/", true) == 0 && StrContains(mapName, ".ugc") > -1;
+void ResolveMapDisplayName(const char[] displayName, char[] map, int maxlen) {
+	// Resolve display names to full names
+	if (!g_MapNameReference.GetString(displayName, map, maxlen)) {
+		strcopy(map, maxlen, map);
+	}
 }
