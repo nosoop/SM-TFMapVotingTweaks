@@ -36,18 +36,24 @@ public void OnPluginStart() {
 	LoadTranslations("common.phrases");
 	LoadTranslations("nominations.phrases");
 	
-	CreateConVar("sm_tfmapvote_version", PLUGIN_VERSION, "Current version of Map Voting Tweaks.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
+	CreateConVar("sm_tfmapvote_version", PLUGIN_VERSION,
+			"Current version of Map Voting Tweaks.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	
-	g_ConVarNextLevelAsNominate = CreateConVar("sm_tfmapvote_nominate", "1", "Specifies if the map vote menu is treated as a SourceMod nomination menu.", _, true, 0.0, true, 1.0);
+	g_ConVarNextLevelAsNominate = CreateConVar("sm_tfmapvote_nominate", "1",
+			"Specifies if the map vote menu is treated as a SourceMod nomination menu.", _,
+			true, 0.0, true, 1.0);
 	
-	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1", "Specifies if recent maps should be removed from the vote menu.", _, true, 0.0, true, 1.0);
+	g_ConVarEnforceExclusions = CreateConVar("sm_tfmapvote_exclude", "1",
+			"Specifies if recent maps should be removed from the vote menu.", _, true, 0.0,
+			true, 1.0);
 	
 	g_FullMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
 	g_MapNameReference = new StringMap();
 	
 	// TODO move this to a library check
 	NativeVotes_RegisterVoteCommand(NativeVotesOverride_NextLevel, OnNextLevelVoteCall);
-	NativeVotes_RegisterVoteCommand(NativeVotesOverride_ChgLevel, OnAdminChangeLevelVoteCall, VisCheck_AdminChangeLevelVote);
+	NativeVotes_RegisterVoteCommand(NativeVotesOverride_ChgLevel, OnAdminChangeLevelVoteCall,
+			VisCheck_AdminChangeLevelVote);
 	
 	AutoExecConfig();
 }
@@ -60,12 +66,16 @@ public void OnMapEnd() {
 public void OnMapStart() {
 	g_bFinalizedMapCycleTable = false;
 	
-	if ((g_iMapCycleStringTable = FindStringTable(TABLE_SERVER_MAP_CYCLE)) == INVALID_STRING_TABLE) {
+	if ((g_iMapCycleStringTable = FindStringTable(TABLE_SERVER_MAP_CYCLE))
+			== INVALID_STRING_TABLE) {
 		SetFailState("Could not find %s stringtable", TABLE_SERVER_MAP_CYCLE);
 	}
 	
-	if ((g_iMapCycleStringTableIndex = FindStringIndex(g_iMapCycleStringTable, TABLEENTRY_SERVER_MAP_CYCLE)) == INVALID_STRING_INDEX) {
-		SetFailState("Could not find %s string index in table %s.", TABLEENTRY_SERVER_MAP_CYCLE, TABLE_SERVER_MAP_CYCLE);
+	if ((g_iMapCycleStringTableIndex =
+			FindStringIndex(g_iMapCycleStringTable, TABLEENTRY_SERVER_MAP_CYCLE))
+			== INVALID_STRING_INDEX) {
+		SetFailState("Could not find %s string index in table %s.", TABLEENTRY_SERVER_MAP_CYCLE,
+				TABLE_SERVER_MAP_CYCLE);
 	}
 	
 	/**
@@ -124,7 +134,8 @@ public void OnClientPostAdminCheck(int iClient) {
 /**
  * Overrides the next level vote call with a nomination.
  */
-public Action OnNextLevelVoteCall(int client, NativeVotesOverride overrideType, const char[] voteArgument) {
+public Action OnNextLevelVoteCall(int client, NativeVotesOverride overrideType,
+		const char[] voteArgument) {
 	char map[MAP_SANE_NAME_LENGTH];
 	ResolveMapDisplayName(voteArgument, map, sizeof(map));
 	if (true || g_ConVarNextLevelAsNominate.BoolValue) {
@@ -149,7 +160,8 @@ public Action VisCheck_AdminChangeLevelVote(int client, NativeVotesOverride over
 /**
  * Admin "changelevel" allows admin to immediately change to the next level
  */
-public Action OnAdminChangeLevelVoteCall(int client, NativeVotesOverride overrideType, const char[] voteArgument) {
+public Action OnAdminChangeLevelVoteCall(int client, NativeVotesOverride overrideType,
+		const char[] voteArgument) {
 	char map[MAP_SANE_NAME_LENGTH];
 	ResolveMapDisplayName(voteArgument, map, sizeof(map));
 	
@@ -206,9 +218,13 @@ void ProcessMapNomination(int iClient, const char[] nominatedMap) {
 }
 
 ArrayList ReadServerMapCycleFromStringTable() {
-	int dataLength = GetStringTableDataLength(g_iMapCycleStringTable, g_iMapCycleStringTableIndex);
+	int dataLength = GetStringTableDataLength(g_iMapCycleStringTable,
+			g_iMapCycleStringTableIndex);
+	
 	char[] mapData = new char[dataLength];
-	GetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, mapData, dataLength);
+	
+	GetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, mapData,
+			dataLength);
 	
 	return ArrayListFromStringLines(mapData);
 }
@@ -220,7 +236,8 @@ void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
 	StringLinesFromArrayList(mapCycle, newMapData, dataLength);
 	
 	bool bPreviousState = LockStringTables(false);
-	SetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, newMapData, dataLength);
+	SetStringTableData(g_iMapCycleStringTable, g_iMapCycleStringTableIndex, newMapData,
+			dataLength);
 	LockStringTables(bPreviousState);
 }
 
@@ -255,7 +272,8 @@ void ProcessServerMapCycleStringTable() {
 			continue;
 		}
 		
-		if (!StrEqual(shortMapBuffer, mapBuffer, false) && g_MapNameReference.SetString(shortMapBuffer, mapBuffer, true)) {
+		if (!StrEqual(shortMapBuffer, mapBuffer, false)
+				&& g_MapNameReference.SetString(shortMapBuffer, mapBuffer, true)) {
 			// Is resolved workshop map name
 			if (newMaps.FindString(shortMapBuffer) == -1) {
 				newMaps.PushString(shortMapBuffer);
