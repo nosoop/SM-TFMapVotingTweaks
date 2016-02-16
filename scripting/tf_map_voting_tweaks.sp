@@ -7,7 +7,7 @@
 
 #pragma newdecls required
 
-#define PLUGIN_VERSION "0.2.0"
+#define PLUGIN_VERSION "0.2.1"
 public Plugin myinfo = {
     name = "[TF2] Map Voting Tweaks",
     author = "nosoop",
@@ -32,6 +32,8 @@ ConVar g_ConVarNextLevelAsNominate, g_ConVarEnforceExclusions;
 int g_iMapCycleStringTable, g_iMapCycleStringTableIndex;
 bool g_bFinalizedMapCycleTable;
 
+bool g_bNativeVotesLoaded;
+
 public void OnPluginStart() {
 	LoadTranslations("common.phrases");
 	LoadTranslations("nominations.phrases");
@@ -49,11 +51,6 @@ public void OnPluginStart() {
 	
 	g_FullMapList = new ArrayList(MAP_SANE_NAME_LENGTH);
 	g_MapNameReference = new StringMap();
-	
-	// TODO move this to a library check
-	NativeVotes_RegisterVoteCommand(NativeVotesOverride_NextLevel, OnNextLevelVoteCall);
-	NativeVotes_RegisterVoteCommand(NativeVotesOverride_ChgLevel, OnAdminChangeLevelVoteCall,
-			VisCheck_AdminChangeLevelVote);
 	
 	AutoExecConfig();
 }
@@ -125,7 +122,7 @@ public void OnClientPostAdminCheck(int iClient) {
 	 * don't resolve to display names, so we're currently just going to process it when the
 	 * first actual player is in-game, too.  It *should* be ready by then, riiiiight?
 	 */
-	if (!IsFakeClient(iClient)) {
+	if (!IsFakeClient(iClient) && g_bNativeVotesLoaded) {
 		ProcessServerMapCycleStringTable();
 		g_bFinalizedMapCycleTable = true;
 	}
@@ -245,7 +242,7 @@ void WriteServerMapCycleToStringTable(ArrayList mapCycle) {
  * Modifies the ServerMapCycle stringtable to provide shorthand map names.
  */
 void ProcessServerMapCycleStringTable() {
-	if (g_bFinalizedMapCycleTable) {
+	if (g_bFinalizedMapCycleTable || !g_bNativeVotesLoaded) {
 		return;
 	}
 	
@@ -342,4 +339,32 @@ void ResolveMapDisplayName(const char[] displayName, char[] map, int maxlen) {
 	if (!g_MapNameReference.GetString(displayName, map, maxlen)) {
 		strcopy(map, maxlen, map);
 	}
+}
+
+public void OnAllPluginsLoaded() {
+	if (LibraryExists("nativevotes")) {
+		OnNativeVotesLoaded();
+	}
+}
+
+public void OnLibraryAdded(const char[] name) {
+	if (StrEqual(name, "nativevotes")) {
+		OnNativeVotesLoaded();
+	}
+}
+
+public void OnLibraryRemoved(const char[] name) {
+	if (StrEqual(name, "nativevotes")) {
+		OnNativeVotesLoaded();
+	}
+}
+
+void OnNativeVotesLoaded() {
+	g_bNativeVotesLoaded = true;
+	
+	NativeVotes_RegisterVoteCommand(NativeVotesOverride_NextLevel, OnNextLevelVoteCall);
+	NativeVotes_RegisterVoteCommand(NativeVotesOverride_ChgLevel, OnAdminChangeLevelVoteCall,
+			VisCheck_AdminChangeLevelVote);
+	
+	// TODO unload support?
 }
